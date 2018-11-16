@@ -2,7 +2,7 @@
 	This file can be used to generate encryption&decryption key. You can use the
 	GenKeyBySeed method to spawn&respawn the same key without storing the relationship
 	between KID and Key in db.
- */
+*/
 
 package key
 
@@ -16,7 +16,7 @@ import (
 )
 
 // At least 30 bytes
-var defaultKeySeed  = []byte("b1cc1aa664122baca692107d4ba5d6d21ef9787ee82f8020ec93adcc25d44b8f")
+var defaultKeySeed = []byte("b1cc1aa664122baca692107d4ba5d6d21ef9787ee82f8020ec93adcc25d44b8f")
 
 type KeyGenerator struct {
 	// Key seed used for GenKeyBySeed.
@@ -24,7 +24,7 @@ type KeyGenerator struct {
 	seed []byte
 }
 
-func NewKeyGenerator(seed []byte) *KeyGenerator{
+func NewKeyGenerator(seed []byte) *KeyGenerator {
 	return &KeyGenerator{
 		seed: seed,
 	}
@@ -70,28 +70,32 @@ func generateKeyAndKidBySeed(uuid string, seed []byte) []byte {
 	shaC.Write(keyIdBytes)
 	outputC := shaB.Sum(nil)
 
-	for i := 0; i< drm_aes_keysize_128; i++ {
-		contentKey[i] = outputA[i] ^ outputA[i + drm_aes_keysize_128] ^
-			outputB[i] ^ outputB[i + drm_aes_keysize_128] ^
-			outputC[i] ^ outputC[i + drm_aes_keysize_128]
+	for i := 0; i < drm_aes_keysize_128; i++ {
+		contentKey[i] = outputA[i] ^ outputA[i+drm_aes_keysize_128] ^
+			outputB[i] ^ outputB[i+drm_aes_keysize_128] ^
+			outputC[i] ^ outputC[i+drm_aes_keysize_128]
 	}
 
 	return contentKey
 }
 
-// If error happens, second return value is an empty string.
+func GenerateUUID() string {
+	kidBytes, err := exec.Command("uuidgen").Output()
+	if err != nil {
+		log.Fatal(err)
+		return ""
+	} else {
+		return strings.TrimSuffix(string(kidBytes), "\n")
+	}
+}
+
+// If error happens, kid is empty string.
 func generateRandKeyAndKid() ([]byte, string) {
 	rnd := rand.New(rand.NewSource(time.Now().Unix()))
 	key := make([]byte, 16)
 	rnd.Read(key)
 
-	var kid string
-	kidBytes, err := exec.Command("uuidgen").Output()
-	if err != nil {
-		log.Fatal(err)
-	} else {
-		kid = strings.TrimSuffix(string(kidBytes), "\n")
-	}
+	kid := GenerateUUID()
 
 	return key, kid
 }

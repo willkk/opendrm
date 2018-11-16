@@ -6,10 +6,10 @@ type KeyServer struct {
 	server *http.Server
 }
 
-func NewKeyServer(addr string) *KeyServer{
+func NewKeyServer(addr string) *KeyServer {
 	return &KeyServer{
 		server: &http.Server{
-			Addr:addr,
+			Addr: addr,
 		},
 	}
 }
