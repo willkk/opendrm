@@ -1,19 +1,46 @@
-package core
+/*
+	This file can be used to generate encryption&decryption key. You can use the
+	GenKeyBySeed method to spawn&respawn the same key without storing the relationship
+	between KID and Key in db.
+ */
+
+package key
 
 import (
 	"crypto/sha256"
 	"log"
 	"math/rand"
 	"os/exec"
+	"strings"
 	"time"
 )
 
 // At least 30 bytes
-var seed  = []byte("b1cc1aa664122baca692107d4ba5d6d21ef9787ee82f8020ec93adcc25d44b8f")
+var defaultKeySeed  = []byte("b1cc1aa664122baca692107d4ba5d6d21ef9787ee82f8020ec93adcc25d44b8f")
+
+type KeyGenerator struct {
+	// Key seed used for GenKeyBySeed.
+	// Set to nil if not used.
+	seed []byte
+}
+
+func NewKeyGenerator(seed []byte) *KeyGenerator{
+	return &KeyGenerator{
+		seed: seed,
+	}
+}
+
+func (this *KeyGenerator) GenKeyBySeed(uuid string) []byte {
+	return generateKeyAndKidBySeed(uuid, this.seed)
+}
+
+func (this *KeyGenerator) GenRandKey() ([]byte, string) {
+	return generateRandKeyAndKid()
+}
 
 // Based on https://docs.microsoft.com/en-us/playready/specifications/playready-key-seed
 // Ck(KID) = f(KID, KeySeed)
-func GenerateKeyAndKidBySeed(uuid string) []byte {
+func generateKeyAndKidBySeed(uuid string, seed []byte) []byte {
 	drm_aes_keysize_128 := 16
 	contentKey := make([]byte, drm_aes_keysize_128)
 
@@ -52,15 +79,19 @@ func GenerateKeyAndKidBySeed(uuid string) []byte {
 	return contentKey
 }
 
-func GenerateRandKeyAndKid() ([]byte, string) {
+// If error happens, second return value is an empty string.
+func generateRandKeyAndKid() ([]byte, string) {
 	rnd := rand.New(rand.NewSource(time.Now().Unix()))
 	key := make([]byte, 16)
 	rnd.Read(key)
 
-	kid, err := exec.Command("uuidgen").Output()
+	var kid string
+	kidBytes, err := exec.Command("uuidgen").Output()
 	if err != nil {
 		log.Fatal(err)
+	} else {
+		kid = strings.TrimSuffix(string(kidBytes), "\n")
 	}
 
-	return key, string(kid)
+	return key, kid
 }
