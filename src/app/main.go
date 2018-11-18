@@ -5,6 +5,7 @@ import (
 	"core/license"
 	"core/server"
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 )
@@ -30,7 +31,7 @@ func GenKey(w http.ResponseWriter, r *http.Request) {
 
 type LicenseRequest struct {
 	// required
-	Deviceid string
+	DeviceId string
 	// required
 	Kids []string `json:"kids"`
 	// optional
@@ -47,9 +48,30 @@ type LicenseResp struct {
 func AcquireLicense(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
-	//
-	kids := r.Form["kids"]
-	log.Printf("kids:%v")
+	reqData, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Read request failed. err=%s", err)
+		return
+	}
+	log.Printf("data:%s", string(reqData))
+
+	req := &LicenseRequest{}
+	err = json.Unmarshal(reqData, req)
+	if err != nil {
+		log.Printf("Unmarshal request failed. err=%s", err)
+		return
+	}
+	log.Printf("kids:%v", req.Kids)
+
+	// Query or calculate the key of related key id
+	keyGen := key.NewKeyGenerator(nil)
+	keymap := make(map[string][]byte, 0)
+	for _, kid := range req.Kids {
+		key := keyGen.GenKeyByDefaultSeed(kid)
+		keymap[kid] = key
+	}
+
+	// Generate license
 
 }
 

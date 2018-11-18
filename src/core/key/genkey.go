@@ -30,8 +30,12 @@ func NewKeyGenerator(seed []byte) *KeyGenerator {
 	}
 }
 
-func (this *KeyGenerator) GenKeyBySeed(uuid string) []byte {
-	return generateKeyAndKidBySeed(uuid, this.seed)
+func (this *KeyGenerator) GenKeyBySeed(kid string) []byte {
+	return generateKeyAndKidBySeed(kid, this.seed)
+}
+
+func (this *KeyGenerator) GenKeyByDefaultSeed(uuid string) []byte {
+	return generateKeyAndKidBySeed(uuid, defaultKeySeed)
 }
 
 func (this *KeyGenerator) GenRandKey() ([]byte, string) {

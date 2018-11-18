@@ -6,7 +6,7 @@ type ContentKey struct {
 }
 
 type Content struct {
-	UnitType
+	UnitHeader
 	Length uint16 // length of data
 	// It can be UUID or whatever is unique.
 	ContentId uint64       // content identifier
