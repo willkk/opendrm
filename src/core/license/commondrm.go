@@ -5,8 +5,17 @@ package license
 
 import (
 	"bytes"
+	"core/key"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/pem"
+	"errors"
+	"io/ioutil"
 	"log"
+	"time"
 )
 
 /*  CommonLicense contains the basic information that a license functions upon.
@@ -85,11 +94,6 @@ const (
 	keyRuleTypePlayTimes    = 0x03 // uint32, times that this content can be used
 	keyRuleTypeTimeSpan     = 0x04 // uint32, seconds since license is first used
 	keyRuleTypeAccuTimeSpan = 0x05 // uint32, all seconds that license is allowed to be used
-
-	counterTypeAnd = 0xA0
-	counterTypeOr  = 0xA1
-	counterTypeNot = 0xA2
-	counterTypeXor = 0xA3
 )
 
 type CommonLicense struct {
@@ -97,37 +101,93 @@ type CommonLicense struct {
 	Keys      Keys
 	Objects   AuthObjects
 	Rights    Rights
-	Policy    Policy // Usage rules of Rights
+	Policys    Policys // Usage rules of Rights
 	Counter   Counter
 	Signature Signature
 }
 
-func (cl *CommonLicense) Serialize() []byte {
+func NewCommonLicense(kids []string, objIds []string) *CommonLicense {
+	units := len(kids) + 5
+
+	keys := Keys{}
+	keygen := key.NewKeyGenerator(nil)
+	for _, kid := range kids {
+		key := keygen.GenKeyByDefaultSeed(kid)
+		keys = append(keys, NewKey(kid, key))
+	}
+
+	objs := AuthObjects{}
+	for _, objId := range objIds {
+		objs = append(objs, NewAuthObject(authObjTypeAccount, objId))
+	}
+
+	plcs := Policys{}
+	for _, kid := range kids {
+		plcs = append(plcs, NewPolicy(kid))
+	}
+
+	return &CommonLicense{
+		Header: newLicenseHeader(1, 1234567890, uint8(units)),
+		Rights: NewRights(rightsTypePlay),
+		Objects: objs,
+		Policys: plcs,
+		Keys: keys,
+		Counter: NewCounter(ctrTypeAnd),
+		Signature: newSignature(),
+	}
+}
+
+func (cl *CommonLicense) Serialize(withSig bool) []byte {
 	buff := &bytes.Buffer{}
 	binary.Write(buff, binary.BigEndian, cl.Header)
-	log.Printf("after hdr len: %d", buff.Len())
 	binary.Write(buff, binary.BigEndian, cl.Keys.Bytes())
-	log.Printf("after kys len: %d", buff.Len())
 	binary.Write(buff, binary.BigEndian, cl.Objects.Bytes())
-	log.Printf("after objs len: %d", buff.Len())
 	binary.Write(buff, binary.BigEndian, cl.Rights.Bytes())
-	log.Printf("after rgts len: %d", buff.Len())
-	binary.Write(buff, binary.BigEndian, cl.Policy.Bytes())
-	log.Printf("after pcy len: %d", buff.Len())
+	binary.Write(buff, binary.BigEndian, cl.Policys.Bytes())
 	binary.Write(buff, binary.BigEndian, cl.Counter.Bytes())
-	log.Printf("after cnt len: %d", buff.Len())
-	binary.Write(buff, binary.BigEndian, cl.Signature.Bytes())
-	log.Printf("after sgt len: %d", buff.Len())
+
+	if withSig {
+		binary.Write(buff, binary.BigEndian, cl.Signature.Bytes())
+	}
 
 	return buff.Bytes()
 }
 
-func NewCommonLicense(kids []string) *CommonLicense {
-	units := len(kids) + 5
-	return &CommonLicense{
-		Header:    newLicenseHeader(1, 1234567890, uint8(units)),
-		Signature: newSignature(),
+// Get yourself's private key using 'openssl genrsa -out rsa_private_key.pem 1024'
+func (cl *CommonLicense) Sign() error {
+	bytes := cl.Serialize(false)
+
+	pkey, err := ioutil.ReadFile(pemFilePath)
+	if err != nil {
+		return err
 	}
+
+	// Read private key from pem file
+	block, _ := pem.Decode(pkey)
+	if block == nil { // 失败情况
+		log.Fatalf("Decode pem failed.")
+		return errors.New("no pem block found")
+	}
+
+	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		log.Fatalf("Parse private key failed. Err=%s", err)
+		return err
+	}
+
+	h := sha1.New()
+	h.Write(bytes)
+	digest := h.Sum(nil)
+	sig, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA1, digest)
+	if err != nil {
+		log.Fatalf("Sign failed. Err=%s", err)
+		return err
+	}
+
+	cl.Signature.SignatureData = sig
+	cl.Signature.SignatureLen = uint16(len(sig))
+
+	return nil
 }
 
 type UnitHeader struct {
@@ -158,14 +218,32 @@ func newLicenseHeader(ver uint8, id uint64, units uint8) LicenseHeader {
 	}
 }
 
-type AuthObjects struct {
+const (
+	authObjTypeAccount = 0x01
+	authObjTypeDevice = 0x02
+	authObjTypeIp = 0x03
+)
+
+type AuthObject struct {
 	UnitHeader
 
 	ObjectType uint8  // object type
 	ObjectId   []byte // object id, like user account id, device id or others similar.
 }
 
-func (ao *AuthObjects) Bytes() []byte {
+func NewAuthObject(objType uint8, objId string) AuthObject {
+	return AuthObject{
+		UnitHeader: UnitHeader{
+			Type: 0x02,
+			Index: 0x01,
+			Length: uint16(1 + len(objId)),
+		},
+		ObjectType: objType,
+		ObjectId: []byte(objId),
+	}
+}
+
+func (ao *AuthObject) Bytes() []byte {
 	buff := &bytes.Buffer{}
 
 	binary.Write(buff, binary.BigEndian, ao.Type)
@@ -177,8 +255,18 @@ func (ao *AuthObjects) Bytes() []byte {
 	return buff.Bytes()
 }
 
+type AuthObjects []AuthObject
+
+func (aos *AuthObjects) Bytes() []byte {
+	buff := &bytes.Buffer{}
+	for _, obj := range *aos {
+		buff.Write(obj.Bytes())
+	}
+	return buff.Bytes()
+}
+
 // The keys is issued in encrypted form.
-type Keys struct {
+type Key struct {
 	UnitHeader
 
 	AlgorithmId uint8  // encryption algorithm of the key
@@ -186,16 +274,32 @@ type Keys struct {
 	KeyData     []byte // encrypted key data with length of KeyDataLen bytes
 
 	// Auxiliary info of key. This is judged by Length field of UnitHeader.
-	/*	KeyType       uint8  // key type
-		KeyIdLen      uint8  // length of KeyId
-		KeyId         []byte // KeyId data
+	KeyType       uint8  // key type
+	KeyIdLen      uint8  // length of KeyId
+	KeyId         []byte // KeyId data
+	/*
 		UpperKeyType  uint8  // type of the key that is used to encrypt key
 		UpperKeyIdLen uint8  // length of UpperKeyId
 		UpperKeyId    []byte // id of the key that is used to encrypt key
 	*/
 }
 
-func (k *Keys) Bytes() []byte {
+func NewKey(kid string, key []byte) Key {
+	return Key{
+		UnitHeader: UnitHeader{
+			Type: 0x03,
+			Index: 0x01,
+		},
+		AlgorithmId: algorithmBlockCipher_AES_128_128,
+		KeyData:key,
+		KeyDataLen: uint16(len(key)),
+		KeyType: keyTypeContent,
+		KeyIdLen: uint8(len(kid)),
+		KeyId: []byte(kid),
+	}
+}
+
+func (k *Key) Bytes() []byte {
 	buff := &bytes.Buffer{}
 
 	binary.Write(buff, binary.BigEndian, k.Type)
@@ -205,6 +309,16 @@ func (k *Keys) Bytes() []byte {
 	binary.Write(buff, binary.BigEndian, k.KeyDataLen)
 	binary.Write(buff, binary.BigEndian, k.KeyData)
 
+	return buff.Bytes()
+}
+
+type Keys []Key
+
+func (ks *Keys) Bytes() []byte {
+	buff := &bytes.Buffer{}
+	for _, k := range *ks {
+		buff.Write(k.Bytes())
+	}
 	return buff.Bytes()
 }
 
@@ -231,11 +345,49 @@ func (krs *KeyRules) Bytes() []byte {
 type Policy struct {
 	UnitHeader
 
-	KeyType     uint8     // key type
-	KeyIdLen    uint8     // length of KeyId
-	KeyId       []byte    // KeyId data
-	KeyRulesNum uint8     // number of key rules
+	KeyType     uint8    // key type
+	KeyIdLen    uint8    // length of KeyId
+	KeyId       []byte   // KeyId data
+	KeyRulesNum uint8    // number of key rules
 	KeyRules    KeyRules // key rules data
+}
+
+func NewPolicy(kid string) Policy {
+	now := time.Now()
+	startTime := now.Unix()
+	endTime := now.AddDate(1, 0, 1).Unix()
+	buff := &bytes.Buffer{}
+	binary.Write(buff, binary.BigEndian, startTime)
+	startTimeData := buff.Bytes()
+	buff.Reset()
+	binary.Write(buff, binary.BigEndian, endTime)
+	endTimeData := buff.Bytes()
+
+	plc := Policy {
+		UnitHeader: UnitHeader{
+			Type: 0x04,
+			Index: 0x01,
+		},
+		KeyType:keyTypeContent,
+		KeyIdLen: uint8(len(kid)),
+		KeyId: []byte(kid),
+		KeyRulesNum: 1,
+		KeyRules: KeyRules{
+			KeyRule{
+				KeyRuleType: keyRuleTypeStartTime,
+				KeyRuleLen: uint8(len(startTimeData)),
+				KeyRuleData: startTimeData,
+			},
+			KeyRule{
+				KeyRuleType: keyRuleTypeEndTime,
+				KeyRuleLen: uint8(len(endTimeData)),
+				KeyRuleData: endTimeData,
+			},
+		},
+	}
+	plc.Length = uint16(len(plc.Bytes()) - 2)
+
+	return plc
 }
 
 func (p *Policy) Bytes() []byte {
@@ -253,10 +405,40 @@ func (p *Policy) Bytes() []byte {
 	return buff.Bytes()
 }
 
+type Policys []Policy
+
+func (ps *Policys) Bytes() []byte {
+	buff := &bytes.Buffer{}
+	for _, p := range *ps {
+		buff.Write(p.Bytes())
+	}
+	return buff.Bytes()
+}
+
 type Rights struct {
 	UnitHeader
 
 	RightsData []byte
+}
+
+const (
+	rightsTypePlay        = 0x10
+	rightsTypeRecord      = 0x20
+	rightsTypeCopy        = 0x30
+	rightsTypeStore       = 0x40
+	rightsTypeForward     = 0x50
+	rightsTypeExecute     = 0x60
+	rightsTypeSuperRights = 0x80
+)
+
+func NewRights(uType uint8) Rights {
+	return Rights{
+		UnitHeader: UnitHeader{
+			Type:   uType,
+			Index:  0x01,
+			Length: 0,
+		},
+	}
 }
 
 func (r *Rights) Bytes() []byte {
@@ -270,11 +452,29 @@ func (r *Rights) Bytes() []byte {
 	return buff.Bytes()
 }
 
+const (
+	ctrTypeAnd = 0xA0
+	ctrTypeOr  = 0xA1
+	ctrTypeNot = 0xA2
+	ctrTypeXor = 0xA3
+)
+
 type Counter struct {
 	UnitHeader
 
 	RightsIndexNum uint16
 	RightsIndex    []uint8
+}
+
+func NewCounter(uType uint8) Counter {
+	return Counter{
+		UnitHeader: UnitHeader{
+			Type:   uType,
+			Index:  0x01,
+			Length: 4,
+		},
+		RightsIndexNum: 0,
+	}
 }
 
 func (c *Counter) Bytes() []byte {
@@ -320,6 +520,6 @@ func newSignature() Signature {
 			Type:  0xFF,
 			Index: 0x01,
 		},
-		AlgorithmId: algorithmBlockCipher_AES_128_128,
+		AlgorithmId: algorithmSignature_RSA_SHA1_1024,
 	}
 }

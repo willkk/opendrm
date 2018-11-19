@@ -63,16 +63,9 @@ func AcquireLicense(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("kids:%v", req.Kids)
 
-	// Query or calculate the key of related key id
-	keyGen := key.NewKeyGenerator(nil)
-	keymap := make(map[string][]byte, 0)
-	for _, kid := range req.Kids {
-		key := keyGen.GenKeyByDefaultSeed(kid)
-		keymap[kid] = key
-	}
-
 	// Generate license
-
+	lic := license.NewCommonLicense(req.Kids)
+	lic.Serialize()
 }
 
 func main() {
