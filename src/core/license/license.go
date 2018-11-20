@@ -36,7 +36,6 @@ func SetPemFile(pemFile string) error {
 	return nil
 }
 
-
 func Sign(bytes []byte) ([]byte, error) {
 	pkey, err := ioutil.ReadFile(pemFilePath)
 	if err != nil {

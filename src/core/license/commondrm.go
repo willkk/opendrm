@@ -6,60 +6,61 @@ package license
 import (
 	"bytes"
 	"core/key"
+	"encoding/base64"
 	"encoding/binary"
 	"time"
 )
 
-/*  CommonLicense contains the basic information that a license functions upon.
-A common license struct is as below:
-+-----------------------------------+
-|									|
-|			License Header			|
-|									|
-|-----------------------------------|
-|				Content				|
-|-----------------------------------|
-|			Authorized Objects		|
-|-----------------------------------|
-|				Rights				|
-|-----------------------------------|
-|				Keys				|
-|-----------------------------------|
-|				Policy				|
-|-----------------------------------|
-|				Counter				|
-|-----------------------------------|
-|				Signature			|
-+-----------------------------------+
+/*
+	CommonLicense contains the basic information that a license functions upon.
+	A common license struct is as below:
+	+-----------------------------------+
+	|									|
+	|			License Header			|
+	|									|
+	|-----------------------------------|
+	|				Content				|
+	|-----------------------------------|
+	|			Authorized Objects		|
+	|-----------------------------------|
+	|				Rights				|
+	|-----------------------------------|
+	|				Keys				|
+	|-----------------------------------|
+	|				Policy				|
+	|-----------------------------------|
+	|				Counter				|
+	|-----------------------------------|
+	|				Signature			|
+	+-----------------------------------+
 
-The binary form of license is as below:
-+--------------------------------------------------------------------------+
-| license hdr(basic unit) | basic unit | basic unit | ... | signature unit |
-+--------------------------------------------------------------------------+
-The sequence of intermediate basic units could be changed at will.
+	The binary form of license is as below:
+	+--------------------------------------------------------------------------+
+	| license hdr(basic unit) | basic unit | basic unit | ... | signature unit |
+	+--------------------------------------------------------------------------+
+	The sequence of intermediate basic units could be changed at will.
 
-Basic unit struct is as below:
-+-----------------------------------------------------------------+
-| 		Unit Type(16 bits)     | Length(16 bits) | Data(Nx8 bits) |
-|-----------------------------------------------------------------|
-| type(8 bits) | index(8 bits) |    len          |  data 		  |
-+-----------------------------------------------------------------+
+	Basic unit struct is as below:
+	+-----------------------------------------------------------------+
+	| 		Unit Type(16 bits)     | Length(16 bits) | Data(Nx8 bits) |
+	|-----------------------------------------------------------------|
+	| type(8 bits) | index(8 bits) |    len          |  data 		  |
+	+-----------------------------------------------------------------+
 
-The following is the whole values of Unit Type:
-+-----------------------------------------------------------+
-|		  Type			|  Unit Type Value					|
-|-----------------------------------------------------------|
-|	  License Header	|				0x00				|
-|		Content			|				0x01				|
-|	Authorized Objects	|				0x02				|
-|		 Keys			|				0x03				|
-|		Policy			|				0x04				|
-|		Rights			|	  		0x10 ~ 0x9F				|
-|		Counter			|	  		0xA0 ~ 0xAF				|
-|		Signature		|				0xFF				|
-|		Reserved		|  0x05~0x0F, 0xD0~0xDF, 0xE0~0xEF	|
-+-----------------------------------------------------------+
-
+	The following is the whole values of Unit Type:
+	+-----------------------------------------------------------+
+	|		  Type			|  Unit Type Value					|
+	|-----------------------------------------------------------|
+	|	  License Header	|				0x00				|
+	|		Content			|				0x01				|
+	|	Authorized Objects	|				0x02				|
+	|		 Keys			|				0x03				|
+	|		Policy			|				0x04				|
+	|		Rights			|	  		0x10 ~ 0x9F				|
+	|		Counter			|	  		0xA0 ~ 0xAF				|
+	|		Signature		|				0xFF				|
+	|		Reserved		|  0x05~0x0F, 0xD0~0xDF, 0xE0~0xEF	|
+	+-----------------------------------------------------------+
 */
 
 const (
@@ -93,13 +94,14 @@ type CommonLicense struct {
 	Keys      Keys
 	Objects   AuthObjects
 	Rights    Rights
-	Policys    Policys // Usage rules of Rights
+	Policys   Policys // Usage rules of Rights
 	Counter   Counter
 	Signature Signature
 }
 
-func NewCommonLicense(kids []string, objIds []string) *CommonLicense {
-	units := len(kids) + 5
+// Currently we don't use Counter Unit.
+func NewCommonLicense(kids []string, objIds []string, certId string) *CommonLicense {
+	units := len(kids)*2 + len(objIds) + 1
 
 	keys := Keys{}
 	keygen := key.NewKeyGenerator(nil)
@@ -118,14 +120,17 @@ func NewCommonLicense(kids []string, objIds []string) *CommonLicense {
 		plcs = append(plcs, NewPolicy(kid))
 	}
 
+	rs := Rights{}
+	rs = append(rs, NewRight(rightsTypePlay, nil))
+
 	return &CommonLicense{
-		Header: newLicenseHeader(1, 1234567890, uint8(units)),
-		Rights: NewRights(rightsTypePlay),
-		Objects: objs,
-		Policys: plcs,
-		Keys: keys,
-		Counter: NewCounter(ctrTypeAnd),
-		Signature: newSignature(),
+		Header:    newLicenseHeader(1, 1234567890, uint8(units)),
+		Rights:    rs,
+		Objects:   objs,
+		Policys:   plcs,
+		Keys:      keys,
+		Counter:   NewCounter(ctrTypeAnd),
+		Signature: newSignature(certId),
 	}
 }
 
@@ -162,6 +167,10 @@ func (cl *CommonLicense) Sign(withCnt bool) error {
 	return nil
 }
 
+func (cl *CommonLicense) Base64String() string {
+	return base64.StdEncoding.EncodeToString(cl.Serialize(false, true))
+}
+
 type UnitHeader struct {
 	Type   uint8
 	Index  uint8
@@ -192,8 +201,8 @@ func newLicenseHeader(ver uint8, id uint64, units uint8) LicenseHeader {
 
 const (
 	authObjTypeAccount = 0x01
-	authObjTypeDevice = 0x02
-	authObjTypeIp = 0x03
+	authObjTypeDevice  = 0x02
+	authObjTypeIp      = 0x03
 )
 
 type AuthObject struct {
@@ -206,12 +215,12 @@ type AuthObject struct {
 func NewAuthObject(objType uint8, objId string) AuthObject {
 	return AuthObject{
 		UnitHeader: UnitHeader{
-			Type: 0x02,
-			Index: 0x01,
+			Type:   0x02,
+			Index:  0x01,
 			Length: uint16(1 + len(objId)),
 		},
 		ObjectType: objType,
-		ObjectId: []byte(objId),
+		ObjectId:   []byte(objId),
 	}
 }
 
@@ -246,9 +255,9 @@ type Key struct {
 	KeyData     []byte // encrypted key data with length of KeyDataLen bytes
 
 	// Auxiliary info of key. This is judged by Length field of UnitHeader.
-	KeyType       uint8  // key type
-	KeyIdLen      uint8  // length of KeyId
-	KeyId         []byte // KeyId data
+	KeyType  uint8  // key type
+	KeyIdLen uint8  // length of KeyId
+	KeyId    []byte // KeyId data
 	/*
 		UpperKeyType  uint8  // type of the key that is used to encrypt key
 		UpperKeyIdLen uint8  // length of UpperKeyId
@@ -259,15 +268,15 @@ type Key struct {
 func NewKey(kid string, key []byte) Key {
 	return Key{
 		UnitHeader: UnitHeader{
-			Type: 0x03,
+			Type:  0x03,
 			Index: 0x01,
 		},
 		AlgorithmId: algorithmBlockCipher_AES_128_128,
-		KeyData:key,
-		KeyDataLen: uint16(len(key)),
-		KeyType: keyTypeContent,
-		KeyIdLen: uint8(len(kid)),
-		KeyId: []byte(kid),
+		KeyData:     key,
+		KeyDataLen:  uint16(len(key)),
+		KeyType:     keyTypeContent,
+		KeyIdLen:    uint8(len(kid)),
+		KeyId:       []byte(kid),
 	}
 }
 
@@ -294,6 +303,7 @@ func (ks *Keys) Bytes() []byte {
 	return buff.Bytes()
 }
 
+// Concrete data of each kind of key rule, like play times if rule type is play.
 type KeyRule struct {
 	KeyRuleType uint8
 	KeyRuleLen  uint8
@@ -313,7 +323,7 @@ func (krs *KeyRules) Bytes() []byte {
 	return buff.Bytes()
 }
 
-// Policy of keys, or key rules
+// Restrictions of rights
 type Policy struct {
 	UnitHeader
 
@@ -335,24 +345,24 @@ func NewPolicy(kid string) Policy {
 	binary.Write(buff, binary.BigEndian, endTime)
 	endTimeData := buff.Bytes()
 
-	plc := Policy {
+	plc := Policy{
 		UnitHeader: UnitHeader{
-			Type: 0x04,
+			Type:  0x04,
 			Index: 0x01,
 		},
-		KeyType:keyTypeContent,
-		KeyIdLen: uint8(len(kid)),
-		KeyId: []byte(kid),
+		KeyType:     keyTypeContent,
+		KeyIdLen:    uint8(len(kid)),
+		KeyId:       []byte(kid),
 		KeyRulesNum: 1,
 		KeyRules: KeyRules{
 			KeyRule{
 				KeyRuleType: keyRuleTypeStartTime,
-				KeyRuleLen: uint8(len(startTimeData)),
+				KeyRuleLen:  uint8(len(startTimeData)),
 				KeyRuleData: startTimeData,
 			},
 			KeyRule{
 				KeyRuleType: keyRuleTypeEndTime,
-				KeyRuleLen: uint8(len(endTimeData)),
+				KeyRuleLen:  uint8(len(endTimeData)),
 				KeyRuleData: endTimeData,
 			},
 		},
@@ -387,40 +397,77 @@ func (ps *Policys) Bytes() []byte {
 	return buff.Bytes()
 }
 
-type Rights struct {
-	UnitHeader
-
-	RightsData []byte
-}
-
 const (
-	rightsTypePlay        = 0x10
-	rightsTypeRecord      = 0x20
-	rightsTypeCopy        = 0x30
-	rightsTypeStore       = 0x40
-	rightsTypeForward     = 0x50
-	rightsTypeExecute     = 0x60
-	rightsTypeSuperRights = 0x80
+	rightsTypePlay       = 0x10
+	rightsTypeRecord     = 0x20
+	rightsTypeCopy       = 0x30
+	rightsTypeStore      = 0x40
+	rightsTypeForward    = 0x50
+	rightsTypeExecute    = 0x60
+	rightsTypeSuperRight = 0x80
 )
 
-func NewRights(uType uint8) Rights {
-	return Rights{
+/*
+	Rights include Play, Record, Copy, Store, Forward, Execute or SuperRight(all rights).
+	Right Type and data format are as below:
+	+-----------------------------------------------------------------------------------+
+	|     Right Type   			|	Code    |		Data								|
+	|-----------------------------------------------------------------------------------|
+	|	play					|   0x10	|   	nil									|
+	|   play by times			|   0x11	|   	uint32								|
+	|   play by time			|   0x12	|   	uint32(in seconds)					|
+	|   play by time interval	|   0x13	|   	uint32(start time)|uint32(end time)	|
+	|-----------------------------------------------------------------------------------|
+	|	record					|   0x20	|   	nil									|
+	|   record by time interval	|   0x21	|   	uint32(start time)|uint32(end time)	|
+	|   record by time 			|   0x22	|   	uint32(in seconds)					|
+	|-----------------------------------------------------------------------------------|
+	|	copy					|   0x30	|		nil									|
+	|-----------------------------------------------------------------------------------|
+	|	store					|   0x40	|		nil									|
+	|-----------------------------------------------------------------------------------|
+	|	forward					|   0x50	|		nil									|
+	|-----------------------------------------------------------------------------------|
+	|	execute					|   0x60	|		nil									|
+	|-----------------------------------------------------------------------------------|
+	|	super right				|   0x80	|		nil									|
+	+-----------------------------------------------------------------------------------+
+*/
+type Right struct {
+	UnitHeader
+
+	RightData []byte
+}
+
+func NewRight(rType uint8, data []byte) Right {
+	return Right{
 		UnitHeader: UnitHeader{
-			Type:   uType,
+			Type:   rType,
 			Index:  0x01,
-			Length: 0,
+			Length: uint16(len(data)),
 		},
+		RightData: data,
 	}
 }
 
-func (r *Rights) Bytes() []byte {
+func (r *Right) Bytes() []byte {
 	buff := &bytes.Buffer{}
 
 	binary.Write(buff, binary.BigEndian, r.Type)
 	binary.Write(buff, binary.BigEndian, r.Index)
 	binary.Write(buff, binary.BigEndian, r.Length)
-	binary.Write(buff, binary.BigEndian, r.RightsData)
+	binary.Write(buff, binary.BigEndian, r.RightData)
 
+	return buff.Bytes()
+}
+
+type Rights []Right
+
+func (rs *Rights) Bytes() []byte {
+	buff := &bytes.Buffer{}
+	for _, r := range *rs {
+		buff.Write(r.Bytes())
+	}
 	return buff.Bytes()
 }
 
@@ -431,6 +478,8 @@ const (
 	ctrTypeXor = 0xA3
 )
 
+// This Unit indicates the relationships between multiple Right Units. It could be 'and', 'or', 'not' and 'xor'.
+// If this unit is not ever used, 'and' is the default relationship of all basic units.
 type Counter struct {
 	UnitHeader
 
@@ -486,12 +535,14 @@ func (s *Signature) Bytes() []byte {
 	return buff.Bytes()
 }
 
-func newSignature() Signature {
+func newSignature(certId string) Signature {
 	return Signature{
 		UnitHeader: UnitHeader{
 			Type:  0xFF,
 			Index: 0x01,
 		},
-		AlgorithmId: algorithmSignature_RSA_SHA1_1024,
+		AlgorithmId:     algorithmSignature_RSA_SHA1_1024,
+		CertificatId:    []byte(certId),
+		CertificatIdLen: uint8(len([]byte(certId))),
 	}
 }

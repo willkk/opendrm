@@ -2,11 +2,12 @@ package license
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 )
 
 type ContentKey struct {
-	KeyIdLen uint8   // length of a key identifier
+	KeyIdLen uint8  // length of a key identifier
 	KeyId    []byte // key identifier with length of KeyIdLen bytes
 }
 
@@ -26,10 +27,10 @@ func (cks *ContentKeys) Bytes() []byte {
 type Content struct {
 	UnitHeader
 	// It can be UUID or whatever is unique.
-	ContentId uint64       // content identifier
+	ContentId uint64      // content identifier
 	Keys      ContentKeys // at least one key
 
-	// There can be other fields about one content or asset.
+	// There can be other fields about content or asset.
 }
 
 func (c *Content) Bytes() []byte {
@@ -49,16 +50,16 @@ func NewContent(cid uint64, kids []string) *Content {
 	for _, kid := range kids {
 		keys = append(keys, ContentKey{
 			KeyIdLen: uint8(len([]byte(kid))),
-			KeyId: []byte(kid),
+			KeyId:    []byte(kid),
 		})
 	}
 	return &Content{
 		UnitHeader: UnitHeader{
-			Type: 0x01,
+			Type:  0x01,
 			Index: 0x01,
 		},
 		ContentId: cid,
-		Keys: keys,
+		Keys:      keys,
 	}
 }
 
@@ -67,10 +68,10 @@ type ChinaDrmLicense struct {
 	Content Content
 }
 
-func NewChinaDrmLicense(cid uint64, kids []string, objIds []string) ChinaDrmLicense {
+func NewChinaDrmLicense(cid uint64, kids []string, objIds []string, certId string) ChinaDrmLicense {
 	return ChinaDrmLicense{
-		CommonLicense: *NewCommonLicense(kids, objIds),
-		Content: *NewContent(cid, kids),
+		CommonLicense: *NewCommonLicense(kids, objIds, certId),
+		Content:       *NewContent(cid, kids),
 	}
 }
 
@@ -99,4 +100,8 @@ func (cdl *ChinaDrmLicense) Sign(withCnt bool) error {
 	cdl.Signature.SignatureLen = uint16(len(sig))
 
 	return nil
+}
+
+func (cdl *ChinaDrmLicense) Base64String() string {
+	return base64.StdEncoding.EncodeToString(cdl.Serialize(false, true))
 }
