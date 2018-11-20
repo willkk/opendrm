@@ -1,3 +1,9 @@
+//	Opendrm, an open source implementation of industry-grade DRM(Digital Rights Management) or Key System.
+//  Copyright (C) 2018  wilkk
+//	This file is part of opendrm Project. It is subject to the license terms in the LICENSE file found in
+// 	the top-level directory of this distribution. No part of Foo Project, including this file, may be copied,
+// 	modified, propagated, or distributed except according to the terms contained in the LICENSE file.
+
 /*
 	This file can be used to generate encryption&decryption key. You can use the
 	GenKeyBySeed method to spawn&respawn the same key without storing the relationship
