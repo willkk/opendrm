@@ -5,5 +5,5 @@ This Key System is intended to work with [ISO Common Encryption(CENC) Protection
 
 Anyone is welcome to join me if you are interested or specialized in any of PlayReady, Widevine, FairPlay or others.
 
-***
+# License
 This software is under license [GPLv3](https://github.com/willkk/opendrm/blob/master/LICENSE).
