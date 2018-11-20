@@ -6,15 +6,7 @@ package license
 import (
 	"bytes"
 	"core/key"
-	"crypto"
-	"crypto/rsa"
-	"crypto/sha1"
-	"crypto/x509"
 	"encoding/binary"
-	"encoding/pem"
-	"errors"
-	"io/ioutil"
-	"log"
 	"time"
 )
 
@@ -137,14 +129,16 @@ func NewCommonLicense(kids []string, objIds []string) *CommonLicense {
 	}
 }
 
-func (cl *CommonLicense) Serialize(withSig bool) []byte {
+func (cl *CommonLicense) Serialize(withCnt, withSig bool) []byte {
 	buff := &bytes.Buffer{}
 	binary.Write(buff, binary.BigEndian, cl.Header)
 	binary.Write(buff, binary.BigEndian, cl.Keys.Bytes())
 	binary.Write(buff, binary.BigEndian, cl.Objects.Bytes())
 	binary.Write(buff, binary.BigEndian, cl.Rights.Bytes())
 	binary.Write(buff, binary.BigEndian, cl.Policys.Bytes())
-	binary.Write(buff, binary.BigEndian, cl.Counter.Bytes())
+	if withCnt {
+		binary.Write(buff, binary.BigEndian, cl.Counter.Bytes())
+	}
 
 	if withSig {
 		binary.Write(buff, binary.BigEndian, cl.Signature.Bytes())
@@ -154,33 +148,11 @@ func (cl *CommonLicense) Serialize(withSig bool) []byte {
 }
 
 // Get yourself's private key using 'openssl genrsa -out rsa_private_key.pem 1024'
-func (cl *CommonLicense) Sign() error {
-	bytes := cl.Serialize(false)
+func (cl *CommonLicense) Sign(withCnt bool) error {
+	bytes := cl.Serialize(withCnt, false)
 
-	pkey, err := ioutil.ReadFile(pemFilePath)
+	sig, err := Sign(bytes)
 	if err != nil {
-		return err
-	}
-
-	// Read private key from pem file
-	block, _ := pem.Decode(pkey)
-	if block == nil { // 失败情况
-		log.Fatalf("Decode pem failed.")
-		return errors.New("no pem block found")
-	}
-
-	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		log.Fatalf("Parse private key failed. Err=%s", err)
-		return err
-	}
-
-	h := sha1.New()
-	h.Write(bytes)
-	digest := h.Sum(nil)
-	sig, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA1, digest)
-	if err != nil {
-		log.Fatalf("Sign failed. Err=%s", err)
 		return err
 	}
 
