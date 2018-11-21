@@ -55,6 +55,8 @@ func SetPemFile(pemFile string) error {
 	return nil
 }
 
+// Generate private key by command 'openssl genrsa -out rsa_private_key.pem 1024'
+// Generate public key by command 'openssl rsa -in rsa_private_key.pem -out rsa_pubkey.pem -pubout'
 func Sign(bytes []byte) ([]byte, error) {
 	pkey, err := ioutil.ReadFile(pemFilePath)
 	if err != nil {
@@ -63,7 +65,7 @@ func Sign(bytes []byte) ([]byte, error) {
 
 	// Read private key from pem file
 	block, _ := pem.Decode(pkey)
-	if block == nil { // 失败情况
+	if block == nil {
 		log.Fatalf("Decode pem failed.")
 		return nil, errors.New("no pem block found")
 	}
@@ -74,9 +76,11 @@ func Sign(bytes []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// Calculate hash of original data
 	h := sha1.New()
 	h.Write(bytes)
 	digest := h.Sum(nil)
+
 	sig, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA1, digest)
 	if err != nil {
 		log.Fatalf("Sign failed. Err=%s", err)

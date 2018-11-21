@@ -171,7 +171,6 @@ func (cl *CommonLicense) Serialize(withCnt, withSig bool) []byte {
 	return buff.Bytes()
 }
 
-// Get yourself's private key using 'openssl genrsa -out rsa_private_key.pem 1024'
 func (cl *CommonLicense) Sign(withCnt bool) error {
 	bytes := cl.Serialize(withCnt, false)
 
