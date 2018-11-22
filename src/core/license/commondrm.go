@@ -171,18 +171,18 @@ func (cl *CommonLicense) Serialize(withCnt, withSig bool) []byte {
 	return buff.Bytes()
 }
 
-func (cl *CommonLicense) Sign(withCnt bool) error {
+func (cl *CommonLicense) Sign(withCnt bool) ([]byte, error) {
 	bytes := cl.Serialize(withCnt, false)
 
 	sig, err := Sign(bytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	cl.Signature.SignatureData = sig
 	cl.Signature.SignatureLen = uint16(len(sig))
 
-	return nil
+	return sig, nil
 }
 
 func (cl *CommonLicense) Base64String() string {

@@ -56,7 +56,7 @@ func SetPemFile(pemFile string) error {
 }
 
 // Generate private key by command 'openssl genrsa -out rsa_private_key.pem 1024'
-// Generate public key by command 'openssl rsa -in rsa_private_key.pem -out rsa_pubkey.pem -pubout'
+// Generate public key by command 'openssl rsa -in rsa_private_key.pem -pubout -out rsa_public_key.pem'
 func Sign(bytes []byte) ([]byte, error) {
 	pkey, err := ioutil.ReadFile(pemFilePath)
 	if err != nil {
@@ -77,15 +77,42 @@ func Sign(bytes []byte) ([]byte, error) {
 	}
 
 	// Calculate hash of original data
-	h := sha1.New()
-	h.Write(bytes)
-	digest := h.Sum(nil)
+	digest := sha1.Sum(bytes)
 
-	sig, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA1, digest)
+	sig, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA1, digest[:])
 	if err != nil {
 		log.Fatalf("Sign failed. Err=%s", err)
 		return nil, err
 	}
 
 	return sig, nil
+}
+
+func Verify(hashed []byte, signature []byte) error {
+	pkey, err := ioutil.ReadFile(pemFilePath)
+	if err != nil {
+		log.Fatalf("ReadFile failed. Err=%x", err)
+		return err
+	}
+
+	// Decode public key from pem file
+	block, _ := pem.Decode(pkey)
+	if block == nil {
+		log.Fatalf("Decode pem failed.")
+		return errors.New("No pem block found.")
+	}
+
+	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		log.Fatalf("Parse public key failed. Err=%s", err)
+		return err
+	}
+
+	err = rsa.VerifyPKCS1v15(pubKey.(*rsa.PublicKey), crypto.SHA1, hashed, signature)
+	if err != nil {
+		log.Fatalf("Verify signature failed. Err=%s", err)
+		return err
+	}
+
+	return nil
 }
