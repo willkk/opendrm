@@ -20,13 +20,14 @@
 package main
 
 import (
-	"core/key"
-	"core/license"
-	"core/server"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/willkk/opendrm/src/core/key"
+	"github.com/willkk/opendrm/src/core/license"
+	"github.com/willkk/opendrm/src/core/server"
 )
 
 type KeyResp struct {

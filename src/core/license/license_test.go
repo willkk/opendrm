@@ -21,11 +21,19 @@ package license
 
 import (
 	"crypto/sha1"
+	"path/filepath"
 	"testing"
 )
 
 var comnLicenseSig []byte
 var hashed []byte
+
+var pemDir string
+
+func init() {
+	pemDir, _ = filepath.Abs("../../../test")
+}
+
 func TestNewCommonLicense(t *testing.T) {
 	kids := []string{"123456789", "987345678"}
 	objs := []string{"579de65b-67af-4041-9267-3db266102964", "7429c039-c614-489e-af15-1f109cc4f908"}
@@ -35,7 +43,7 @@ func TestNewCommonLicense(t *testing.T) {
 	sum := sha1.Sum(cl.Serialize(false, false))
 	hashed = sum[:]
 
-	SetPemFile("/media/sf_win_d/goprojects/opendrm/test/rsa_private_key.pem")
+	SetPemFile(pemDir + "/rsa_private_key.pem")
 	comnLicenseSig, _ = cl.Sign(false)
 	//t.Logf("common license: %s", cl.Base64String())
 }
@@ -46,13 +54,13 @@ func TestNewChinaDrmLicense(t *testing.T) {
 	certId := "b8c35868-4b94-4ad9-a0bc-c85e9a03b1de"
 	cdl := NewChinaDrmLicense(12345678900, kids, objs, certId)
 
-	SetPemFile("/media/sf_win_d/goprojects/opendrm/test/rsa_private_key.pem")
+	SetPemFile(pemDir + "/rsa_private_key.pem")
 	cdl.Sign(false)
 	//t.Logf("chinadrm license: %s", cdl.Base64String())
 }
 
 func TestVerify(t *testing.T) {
-	SetPemFile("/media/sf_win_d/goprojects/opendrm/test/rsa_public_key.pem")
+	SetPemFile(pemDir + "/rsa_public_key.pem")
 	err := Verify(hashed, comnLicenseSig)
 	if err != nil {
 		t.Fatalf("Verify failed.")

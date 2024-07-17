@@ -20,10 +20,11 @@
 package server
 
 import (
-	"core/key"
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/willkk/opendrm/src/core/key"
 )
 
 func GenKey(w http.ResponseWriter, r *http.Request) {
